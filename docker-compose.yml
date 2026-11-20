@@ -1,0 +1,47 @@
+# ==============================================================================
+# Synology DS718+ 容器部署：Uptime Kuma (v2-slim)
+# 適用機型：Synology DS718+（原廠 2GB RAM、純 HDD、已使用 Tailscale）
+# 參考架構：Johntsai0320/vaultwarden-backup- (.env + GHCR + 本機持久化掛載)
+# 適用介面：Synology Container Manager「專案 (Project)」或 docker compose CLI
+# ==============================================================================
+
+services:
+  uptime-kuma:
+    # 使用 GHCR 官方 2-slim 多架構映像檔（避開 Docker Hub 限流，並移除 Chromium 節省 2GB RAM 與磁碟）
+    image: ${UPTIME_KUMA_IMAGE:-ghcr.io/louislam/uptime-kuma:2-slim}
+    container_name: uptime-kuma
+    restart: unless-stopped
+    mem_limit: 256m
+    memswap_limit: 384m
+    cpu_shares: 512
+    ports:
+      # 預設映射 3001:3001（避開 novel 3000、homepage 3010、LibreTV 8080、vaultwarden 8200、nginx 8088/8443）
+      - "${UPTIME_KUMA_BIND_IP:-0.0.0.0}:${UPTIME_KUMA_PORT:-3001}:3001"
+    extra_hosts:
+      # 讓 Bridge 模式容器可透過 host.docker.internal 連回 NAS 主機上其他服務埠號
+      - "host.docker.internal:host-gateway"
+    environment:
+      - TZ=${TZ:-Asia/Taipei}
+      # 限制 Node.js V8 堆積記憶體上限，搭配 mem_limit 防止 2GB RAM 機型發生 HDD Swap
+      - NODE_OPTIONS=--max-old-space-size=192
+    volumes:
+      # 官方不支援將 SQLite 資料目錄掛載於 NFS，務必維持在 NAS 本機儲存池
+      - ./data:/app/data
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"
+    healthcheck:
+      test: ["CMD", "extra/healthcheck"]
+      interval: 60s
+      timeout: 30s
+      retries: 5
+      start_period: 180s
+
+# 選填：若欲與 nginx / vaultwarden / homepage 共用自訂 Docker 網路（如 proxy-net），
+# 可取消下方註解，於 Uptime Kuma 即可直接使用 http://vaultwarden:80/alive 等容器名稱進行監控。
+# networks:
+#   default:
+#     name: proxy-net
+#     external: true

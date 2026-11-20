@@ -1,0 +1,14 @@
+# 環境變數設定檔（請勿將含實機位址或敏感設定的 .env 提交至 Git）
+.env
+
+# Uptime Kuma 執行期 SQLite 資料庫、上傳圖示與截圖快取
+data/*
+!data/.gitkeep
+*.db
+*.db-shm
+*.db-wal
+
+# 系統與暫存日誌檔案
+*.log
+.DS_Store
+@eaDir/
