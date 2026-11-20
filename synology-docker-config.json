@@ -1,0 +1,47 @@
+{
+   "CapAdd" : null,
+   "CapDrop" : null,
+   "cmd" : "",
+   "cpu_priority" : 50,
+   "enable_publish_all_ports" : false,
+   "enable_restart_policy" : true,
+   "enabled" : true,
+   "env_variables" : [
+      {
+         "key" : "TZ",
+         "value" : "Asia/Taipei"
+      },
+      {
+         "key" : "NODE_OPTIONS",
+         "value" : "--max-old-space-size=192"
+      }
+   ],
+   "image" : "ghcr.io/johntsai0320/uptime-kuma:latest",
+   "is_ddsm" : false,
+   "is_package" : false,
+   "name" : "uptime-kuma",
+   "network" : [
+      {
+         "driver" : "bridge",
+         "name" : "bridge"
+      }
+   ],
+   "network_mode" : "bridge",
+   "port_bindings" : [
+      {
+         "container_port" : 3001,
+         "host_port" : 3001,
+         "type" : "tcp"
+      }
+   ],
+   "privileged" : false,
+   "use_host_network" : false,
+   "volume_bindings" : [
+      {
+         "host_volume_file" : "/docker/uptime-kuma/data",
+         "is_directory" : true,
+         "mount_point" : "/app/data",
+         "type" : "rw"
+      }
+   ]
+}

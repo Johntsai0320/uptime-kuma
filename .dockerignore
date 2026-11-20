@@ -1,0 +1,16 @@
+.git
+.github
+.env
+data
+tests
+README.md
+docker-compose.yml
+synology-docker-config.json
+__pycache__
+*.pyc
+*.db
+*.db-shm
+*.db-wal
+*.log
+.DS_Store
+@eaDir

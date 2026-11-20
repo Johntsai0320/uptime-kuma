@@ -1,8 +1,6 @@
 # NAS 服務監控中心 — Uptime Kuma v2-slim (Synology DS718+ 2GB 最佳化版)
 
-專為 **Synology DS718+（原廠 2GB RAM、純 HDD 無 SSD、搭配 Tailscale）** 設計的服務在線監控與備份 Webhook 告警中心，可無縫串接 [`Johntsai0320/vaultwarden-backup-`](https://github.com/Johntsai0320/vaultwarden-backup-) 的每日備份通知與全部 NAS 容器健康檢查。
-
-部署架構與慣例一致對齊 [`Johntsai0320/vaultwarden-backup-`](https://github.com/Johntsai0320/vaultwarden-backup-) 與 [`Johntsai0320/nginx`](https://github.com/Johntsai0320/nginx)。
+專為 **Synology DS718+（原廠 2GB RAM、純 HDD 無 SSD、搭配 Tailscale）** 設計的服務在線監控與備份 Webhook 告警中心，整合了 [`LibreTV`](https://github.com/Johntsai0320/LibreTV) 的 **GitHub Actions 自動發布多架構 GHCR 映像檔（`pull` / `build` 雙模式）** 與 [`novel`](https://github.com/Johntsai0320/novel) 的 **`docker-compose.yml` + `synology-docker-config.json`** 部署架構，可無縫串接 [`Johntsai0320/vaultwarden-backup-`](https://github.com/Johntsai0320/vaultwarden-backup-) 的每日備份通知與全部 NAS 容器健康檢查。
 
 ---
 
@@ -10,22 +8,30 @@
 
 ```text
 /volume1/docker/uptime-kuma/
+├── .dockerignore
 ├── .env.example
+├── .github/
+│   └── workflows/
+│       └── docker-publish.yml   # 推送自動驗證並建置 linux/amd64 + linux/arm64 發布至 GHCR
 ├── .gitignore
+├── Dockerfile                   # 封裝 ghcr.io/louislam/uptime-kuma:2-slim 與 DS718+ 預設調校
 ├── README.md
+├── data/                        # 首次啟動自動產生 SQLite 資料庫（已忽略，不進 Git）
 ├── docker-compose.yml
-└── data/                  # 首次啟動自動產生 SQLite 資料庫（已忽略，不進 Git）
+├── synology-docker-config.json  # Synology Container Manager 匯入設定
+└── tests/
+    └── test_configs.py          # 設定與 Manifest 一致性單元測試
 ```
 
 ---
 
 ## ✨ 針對 DS718+ 2GB RAM + 純 HDD 的調校重點
 
-1. **採用 `ghcr.io/louislam/uptime-kuma:2-slim` 映像檔**：
+1. **採用 `ghcr.io/louislam/uptime-kuma:2-slim` 基底映像檔**：
    - 使用 GHCR 多架構映像檔避開 Docker Hub 拉取限流。
    - `2-slim` 版本移除數百 MB 的 Chromium 無頭瀏覽器元件，大幅節省空間並防止在 2GB RAM 機型上誤開 Real Browser 監控造成記憶體耗盡。
 2. **記憶體與日誌防護**：
-   - 限制容器上限 `mem_limit: 256m`、`memswap_limit: 384m`、`cpu_shares: 512`，並設定 `NODE_OPTIONS=--max-old-space-size=192`，避免與其他服務爭搶記憶體引發 HDD Swap。
+   - 限制容器上限 `mem_limit: 256m`、`memswap_limit: 384m`、`cpu_shares: 512`，並預設 `NODE_OPTIONS=--max-old-space-size=192`，避免與其他服務爭搶記憶體引發 HDD Swap。
    - 啟用 `json-file` 日誌輪替（單檔上限 `5m`、最多保留 `2` 份）。
    - 健康檢查套用官方建議緩衝時間（`start_period: 180s`、`retries: 5`），確保在純 HDD 首次初始化資料庫時不會誤判為異常。
 3. **本機儲存提醒（重要）**：
@@ -36,7 +42,7 @@
 
 ---
 
-## 🚀 部署步驟（目標路徑：`/volume1/docker/uptime-kuma`）
+## 🚀 部署方式一：Synology Container Manager 專案 / Docker Compose（最推薦）
 
 ### 步驟 1：下載專案至 NAS 資料夾
 
@@ -46,29 +52,44 @@
 cd /volume1/docker
 git clone https://github.com/Johntsai0320/uptime-kuma.git uptime-kuma
 cd /volume1/docker/uptime-kuma
-```
-
-### 步驟 2：建立 `.env`
-
-```bash
 cp .env.example .env
 ```
 
-預設監聽埠號為 **`3001`**（已避開 `novel:3000`、`homepage:3010`、`LibreTV:8080`、`nginx:8088/8443`、`vaultwarden:8200`），一般情況無須修改即可啟動。
+預設監聽埠號為 **`3001`**（已避開 `novel:3000`、`homepage:3010`、`LibreTV:8080`、`vaultwarden:8200`、`nginx:8088/8443`），一般情況無須修改即可啟動。
 
-### 步驟 3：在 Synology Container Manager 匯入「專案」
+### 步驟 2：拉取映像檔或本地建置啟動
 
-1. 開啟 DSM **Container Manager → 專案 (Project) → 新增 (Create)**。
-2. 專案名稱填入：`uptime-kuma`。
-3. **路徑 (Path)** 選擇 `/docker/uptime-kuma`（即 `/volume1/docker/uptime-kuma`）。
-4. Container Manager 會自動偵測 `docker-compose.yml` → 選擇 **使用現有的 docker-compose.yml** 並啟動。
-5. 連上 Tailscale 後開啟 `http://<您的Tailscale_IP>:3001`，建立管理員帳號（內建 SQLite 資料庫，無需額外裝 MariaDB）。
+- **方式 A（推薦，零建置拉取 GHCR 映像）**：
+  ```bash
+  docker compose pull && docker compose up -d
+  ```
+- **方式 B（本地從 `Dockerfile` 建置啟動）**：
+  ```bash
+  docker compose up -d --build
+  ```
+- **方式 C（DSM 圖形介面匯入專案）**：
+  開啟 DSM **Container Manager → 專案 (Project) → 新增 (Create)**，專案名稱填 `uptime-kuma`，路徑選擇 `/docker/uptime-kuma`，選擇 **使用現有的 docker-compose.yml** 並啟動。
+
+### 步驟 3：初始化帳號
+
+連上 Tailscale 後開啟 `http://<您的Tailscale_IP>:3001`，建立管理員帳號（內建 SQLite 資料庫，無需額外裝 MariaDB）。
+
+---
+
+## 📦 部署方式二：Synology Container Manager 匯入 `synology-docker-config.json`
+
+1. 先於 Synology Container Manager 的 **「映像檔」** 下載：
+   `ghcr.io/johntsai0320/uptime-kuma:latest`
+2. 在 File Station 建立目錄：
+   - `/docker/uptime-kuma/data`
+3. 進入 **Container Manager → 容器 → 設定 → 匯入設定**，選擇本專案的 [`synology-docker-config.json`](./synology-docker-config.json)。
+4. （建議）匯入後可在容器設定中啟用記憶體上限（例如 `256 MB`）以進一步保護 2GB RAM 機型，接著啟動容器即可於埠號 `3001` 開啟服務。
 
 ---
 
 ## 🔗 建議監控項目清單（透過 `host.docker.internal` 本機檢查）
 
-本專案已設定 `extra_hosts: host.docker.internal:host-gateway`，在 Uptime Kuma 新增監控項目時建議透過內網迴路直連：
+在 Uptime Kuma 新增監控項目時建議透過內網迴路直連（方式一 `docker-compose.yml` 已預設啟用 `host.docker.internal:host-gateway`）：
 
 | 服務名稱 | 監控類型 | URL / 目標 | 備註 |
 | :--- | :--- | :--- | :--- |
@@ -80,6 +101,7 @@ cp .env.example .env
 
 > [!NOTE]
 > - **DSM 防火牆放行**：若在 Synology 控制台有啟用 **DSM 防火牆**，請確認已放行 Docker 網段（如 `172.17.0.0/16`）存取上述埠號；或於 `docker-compose.yml` 啟用共用自訂 Docker 網路（如 `proxy-net`）後直接填入容器名稱。
+> - **若採方式二匯入 `synology-docker-config.json`**：單容器匯入預設未附加 `host.docker.internal` 映射，可改填 `http://172.17.0.1:<埠號>`（Docker Bridge 閘道器）、NAS 區網 IP，或將容器加入同一個自訂網路後使用容器名稱。
 > - **Vaultwarden 若設定 `VAULTWARDEN_BIND_IP=127.0.0.1`**：因只綁定本機迴路 `127.0.0.1`，Bridge 模式的 `host.docker.internal` 無法直接連線。此時請改為監控 Synology 反向代理後的 HTTPS 網址（如 `https://vw.yourname.synology.me/alive`），或將兩者加入同一個自訂 Docker 網路並改填 `http://vaultwarden:80/alive`。
 
 ---
@@ -106,3 +128,17 @@ cp .env.example .env
 
 1. 在 Uptime Kuma 建立一個 **狀態頁 (Status Page)**，設定 URL slug（例如 `nas`）並加入要展示的監控項目。
 2. 於 `homepage` 專案的 `config/services.yaml` 取消註解對應的 `uptimekuma` `widget:` 區塊並填入 `slug: nas` 即可在導覽首頁顯示各服務即時狀態。
+
+---
+
+## 🧪 本機測試與 GitHub Actions 自動發布
+
+執行設定檔與架構清單單元測試：
+
+```bash
+python3 -m unittest discover -s tests -v
+```
+
+每次推送至 `main` 分支或推送 `v*` 版本標籤時，[`.github/workflows/docker-publish.yml`](./.github/workflows/docker-publish.yml) 會先執行單元測試與真實容器 `extra/healthcheck` / HTTP 煙霧測試，通過後自動在原生 runner 上建置 `linux/amd64` 與 `linux/arm64` 多架構映像檔並合併 manifest 發布至 `ghcr.io/johntsai0320/uptime-kuma:latest`。
+
+> **注意**：若這是全新建立的公開 GitHub 倉庫，首次發布 GHCR 套件後請到 GitHub **Packages → uptime-kuma → Package settings** 確認套件存取權限（公開或關聯至本倉庫），即可於 NAS 免登入直接拉取映像檔。

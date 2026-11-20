@@ -12,3 +12,5 @@ data/*
 *.log
 .DS_Store
 @eaDir/
+__pycache__/
+*.pyc

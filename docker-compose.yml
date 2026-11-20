@@ -1,14 +1,17 @@
 # ==============================================================================
 # Synology DS718+ 容器部署：Uptime Kuma (v2-slim)
 # 適用機型：Synology DS718+（原廠 2GB RAM、純 HDD、已使用 Tailscale）
-# 參考架構：Johntsai0320/vaultwarden-backup- (.env + GHCR + 本機持久化掛載)
+# 參考架構：Johntsai0320/LibreTV (GHCR 自動發布 + build 雙模式)、Johntsai0320/novel (NAS 掛載與 Synology 設定)
 # 適用介面：Synology Container Manager「專案 (Project)」或 docker compose CLI
 # ==============================================================================
 
 services:
   uptime-kuma:
-    # 使用 GHCR 官方 2-slim 多架構映像檔（避開 Docker Hub 限流，並移除 Chromium 節省 2GB RAM 與磁碟）
-    image: ${UPTIME_KUMA_IMAGE:-ghcr.io/louislam/uptime-kuma:2-slim}
+    build: .
+    # - 使用者（零建置）：不設定 UPTIME_KUMA_IMAGE 即拉取 ghcr.io/johntsai0320/uptime-kuma:latest（首次部署用 docker compose pull）
+    #   亦可自行改為官方上游映像檔 ghcr.io/louislam/uptime-kuma:2-slim
+    # - 開發者（本地建置）：docker compose up -d --build
+    image: ${UPTIME_KUMA_IMAGE:-ghcr.io/johntsai0320/uptime-kuma:latest}
     container_name: uptime-kuma
     restart: unless-stopped
     mem_limit: 256m
@@ -23,7 +26,7 @@ services:
     environment:
       - TZ=${TZ:-Asia/Taipei}
       # 限制 Node.js V8 堆積記憶體上限，搭配 mem_limit 防止 2GB RAM 機型發生 HDD Swap
-      - NODE_OPTIONS=--max-old-space-size=192
+      - NODE_OPTIONS=${NODE_OPTIONS:---max-old-space-size=192}
     volumes:
       # 官方不支援將 SQLite 資料目錄掛載於 NFS，務必維持在 NAS 本機儲存池
       - ./data:/app/data
